@@ -116,7 +116,7 @@ func parseHtml(html string) (Recipe, error) {
 	ingredientSelection.Each(func(i int, s *goquery.Selection) {
 		container := s.Find("div").Last()
 		amount := container.Find("p").First().Text()
-		name := container.Find("p").Last().Text()
+		name := container.Find("p").Eq(1).Text()
 
 		ingredients = append(ingredients, Ingredients{
 			Amount: amount,
@@ -202,14 +202,14 @@ func getAndSaveRecipe(url string, path string, fileName string) error {
 }
 
 func getAndSaveAllRecipes(urls []string, delay time.Duration, path string) {
-	for _, url := range urls {
+	for i, url := range urls {
 		fileName := getFileNameFromUrl(url)
 		err := getAndSaveRecipe(url, path, fileName)
 		if err != nil {
 			fmt.Println("Error fetching recipes:", err)
 			continue
 		}
-		fmt.Println("Fetched recipe:", fileName)
+		fmt.Printf("%d/%d Fetched recipe: %s \n", i, len(urls)+1, fileName)
 		time.Sleep(delay)
 	}
 
