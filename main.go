@@ -104,7 +104,10 @@ func parseHtml(html string) (Recipe, error) {
 
 	tags := make([]string, 0)
 	doc.Find("[data-test-id=recipe-description-tag] span").Each(func(i int, s *goquery.Selection) {
-		tags = append(tags, s.Text())
+		text := s.Text()
+		if text != "•" {
+			tags = append(tags, text)
+		}
 	})
 
 	ingredientSelection := doc.Find("[data-test-id=ingredient-item-shipped], [data-test-id=ingredient-item-not-shipped]")
