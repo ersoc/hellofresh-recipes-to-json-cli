@@ -253,7 +253,7 @@ func getAndSaveAllRecipes(urls []string, delay time.Duration, path string, downl
 			fmt.Println("Error fetching recipes:", err)
 			continue
 		}
-		fmt.Printf("%d/%d Fetched recipe: %s \n", i, len(urls)+1, recipeName)
+		fmt.Printf("%d/%d fetched recipe: %s \n", i+1, len(urls)+1, recipeName)
 		time.Sleep(delay)
 	}
 }
