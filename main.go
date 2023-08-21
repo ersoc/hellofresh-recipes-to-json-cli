@@ -32,6 +32,7 @@ type Ingredients struct {
 type Recipe struct {
 	Title       string
 	Subtitle    string
+	PdfUrl      string
 	Labels      []string
 	Tags        []string
 	Ingredients []Ingredients
@@ -96,6 +97,7 @@ func parseHtml(html string) (Recipe, error) {
 	descriptionSelection := doc.Find("[data-test-id=recipe-description]").First()
 	title := descriptionSelection.Find("h1").First().Text()
 	subtitle := descriptionSelection.Find("h2").First().Text()
+	pdfUrl := doc.Find("[data-test-id=recipe-pdf]").First().AttrOr("href", "")
 
 	labels := make([]string, 0)
 	doc.Find("[data-test-id=label-text] span").Each(func(i int, s *goquery.Selection) {
@@ -135,6 +137,7 @@ func parseHtml(html string) (Recipe, error) {
 	return Recipe{
 		Title:       title,
 		Subtitle:    subtitle,
+		PdfUrl:      pdfUrl,
 		Labels:      labels,
 		Tags:        tags,
 		Ingredients: ingredients,
@@ -142,26 +145,47 @@ func parseHtml(html string) (Recipe, error) {
 	}, nil
 }
 
-func storeRecipeAsJSON(recipe Recipe, filename string, path string) error {
+func storeRecipeAsJSON(recipe Recipe, targetPath string) error {
+	fmt.Print("STORE:", targetPath)
 	jsonData, err := json.MarshalIndent(recipe, "", "  ")
 	if err != nil {
 		return err
 	}
 
-	err = os.MkdirAll(path, 0755)
+	err = os.WriteFile(targetPath, jsonData, 0644)
+	return err
+}
+
+func downloadPDFFromURL(pdfURL string, targetPath string) error {
+	resp, err := http.Get(pdfURL)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("bad status: %s", resp.Status)
+	}
+
+	outFile, err := os.Create(targetPath)
+	if err != nil {
+		return err
+	}
+	defer outFile.Close()
+
+	_, err = io.Copy(outFile, resp.Body)
 	if err != nil {
 		return err
 	}
 
-	err = os.WriteFile(fmt.Sprintf("%s/%s.json", path, filename), jsonData, 0644)
-	return err
+	return nil
 }
 
-func getFileNameFromUrl(url string) string {
+func getBaseFromUrl(url string) string {
 	return path.Base(url)
 }
 
-func fileExists(path string) (bool, error) {
+func pathExists(path string) (bool, error) {
 	_, err := os.Stat(path)
 	if err == nil {
 		return true, nil
@@ -172,15 +196,24 @@ func fileExists(path string) (bool, error) {
 	return false, err
 }
 
-func getAndSaveRecipe(url string, path string, fileName string) error {
-	targetPath := fmt.Sprintf("%s/%s.json", path, fileName)
-	exists, err := fileExists(targetPath)
+func getAndSaveRecipe(url string, path string, recipeName string, downloadPdf bool) error {
+	targetDir := fmt.Sprintf("%s/%s", path, recipeName)
+
+	targetRecipePath := fmt.Sprintf("%s/recipe.json", targetDir)
+	targetRecipePdf := fmt.Sprintf("%s/recipe.pdf", targetDir)
+
+	exists, err := pathExists(targetDir)
 	if err != nil {
 		return err
 	}
 
 	if exists {
-		return fmt.Errorf("file already exists: %s", targetPath)
+		return fmt.Errorf("dir already exists: %s", targetDir)
+	}
+
+	err = os.MkdirAll(targetDir, 0755)
+	if err != nil {
+		return err
 	}
 
 	htmlContent, err := fetchHtml(url)
@@ -193,9 +226,16 @@ func getAndSaveRecipe(url string, path string, fileName string) error {
 		return err
 	}
 
-	err = storeRecipeAsJSON(recipe, fileName, path)
+	err = storeRecipeAsJSON(recipe, targetRecipePath)
 	if err != nil {
 		return err
+	}
+
+	if downloadPdf && recipe.PdfUrl != "" {
+		err := downloadPDFFromURL(recipe.PdfUrl, targetRecipePdf)
+		if err != nil {
+			return err
+		}
 	}
 
 	return nil
@@ -203,16 +243,29 @@ func getAndSaveRecipe(url string, path string, fileName string) error {
 
 func getAndSaveAllRecipes(urls []string, delay time.Duration, path string) {
 	for i, url := range urls {
-		fileName := getFileNameFromUrl(url)
-		err := getAndSaveRecipe(url, path, fileName)
+		recipeName := getBaseFromUrl(url)
+		err := getAndSaveRecipe(url, path, recipeName, false)
 		if err != nil {
 			fmt.Println("Error fetching recipes:", err)
 			continue
 		}
-		fmt.Printf("%d/%d Fetched recipe: %s \n", i, len(urls)+1, fileName)
+		fmt.Printf("%d/%d Fetched recipe: %s \n", i, len(urls)+1, recipeName)
 		time.Sleep(delay)
 	}
+}
 
+func uniqueStrings(strings []string) []string {
+	seen := make(map[string]bool)
+	var result []string
+
+	for _, s := range strings {
+		if !seen[s] {
+			seen[s] = true
+			result = append(result, s)
+		}
+	}
+
+	return result
 }
 
 func main() {
@@ -229,5 +282,5 @@ func main() {
 		return
 	}
 
-	getAndSaveAllRecipes(recipeUrls, delayDuration, *outputPath)
+	getAndSaveAllRecipes(uniqueStrings(recipeUrls), delayDuration, *outputPath)
 }
