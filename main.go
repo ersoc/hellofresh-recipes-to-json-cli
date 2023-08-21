@@ -39,8 +39,13 @@ type Recipe struct {
 	Steps       []string
 }
 
-func getRecipeUrls(tld string) ([]string, error) {
-	resp, err := http.Get(fmt.Sprintf("https://www.hellofresh.%s/sitemap_recipe_pages.xml", tld))
+func getRecipeUrls(tld string, sourceUrl string) ([]string, error) {
+	url := sourceUrl
+	if sourceUrl == "" {
+		url = fmt.Sprintf("https://www.hellofresh.%s/sitemap_recipe_pages.xml", tld)
+	}
+
+	resp, err := http.Get(url)
 	if err != nil {
 		return nil, err
 	}
@@ -128,7 +133,7 @@ func parseHtml(html string) (Recipe, error) {
 
 	var steps []string
 	doc.Find("[data-test-id=instruction-step]").Each(func(i int, s *goquery.Selection) {
-		container := s.Find("div").Last()
+		container := s.Find("div").Eq(1)
 		step := container.Find("p").First().Text()
 
 		steps = append(steps, step)
@@ -146,7 +151,6 @@ func parseHtml(html string) (Recipe, error) {
 }
 
 func storeRecipeAsJSON(recipe Recipe, targetPath string) error {
-	fmt.Print("STORE:", targetPath)
 	jsonData, err := json.MarshalIndent(recipe, "", "  ")
 	if err != nil {
 		return err
@@ -241,10 +245,10 @@ func getAndSaveRecipe(url string, path string, recipeName string, downloadPdf bo
 	return nil
 }
 
-func getAndSaveAllRecipes(urls []string, delay time.Duration, path string) {
+func getAndSaveAllRecipes(urls []string, delay time.Duration, path string, downloadPdfs bool) {
 	for i, url := range urls {
 		recipeName := getBaseFromUrl(url)
-		err := getAndSaveRecipe(url, path, recipeName, false)
+		err := getAndSaveRecipe(url, path, recipeName, downloadPdfs)
 		if err != nil {
 			fmt.Println("Error fetching recipes:", err)
 			continue
@@ -272,15 +276,17 @@ func main() {
 	outputPath := flag.String("output", "./output", "Path to store the output")
 	delay := flag.Int("delay", 5000, "Delay per request in ms")
 	locale := flag.String("tld", "de", "Top level domain of the HelloFresh website")
+	downloadPdfs := flag.Bool("pdf", false, "Download PDFs")
+	siteMapUrl := flag.String("sitemapUrl", "", "URL to the sitemap")
 
 	flag.Parse()
 
 	delayDuration := time.Duration(*delay) * time.Millisecond
-	recipeUrls, err := getRecipeUrls(*locale)
+	recipeUrls, err := getRecipeUrls(*locale, *siteMapUrl)
 	if err != nil {
 		fmt.Println("Error fetching URLs:", err)
 		return
 	}
 
-	getAndSaveAllRecipes(uniqueStrings(recipeUrls), delayDuration, *outputPath)
+	getAndSaveAllRecipes(uniqueStrings(recipeUrls), delayDuration, *outputPath, *downloadPdfs)
 }
