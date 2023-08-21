@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path"
 	"strings"
@@ -32,6 +33,7 @@ type Ingredients struct {
 type Recipe struct {
 	Title       string
 	Subtitle    string
+	CoverImg    string
 	PdfUrl      string
 	Labels      []string
 	Tags        []string
@@ -102,6 +104,7 @@ func parseHtml(html string) (Recipe, error) {
 	descriptionSelection := doc.Find("[data-test-id=recipe-description]").First()
 	title := descriptionSelection.Find("h1").First().Text()
 	subtitle := descriptionSelection.Find("h2").First().Text()
+	coverImg := doc.Find("[data-test-id=recipe-hero-image]").First().Find("img").First().AttrOr("src", "")
 	pdfUrl := doc.Find("[data-test-id=recipe-pdf]").First().AttrOr("href", "")
 
 	labels := make([]string, 0)
@@ -142,6 +145,7 @@ func parseHtml(html string) (Recipe, error) {
 	return Recipe{
 		Title:       title,
 		Subtitle:    subtitle,
+		CoverImg:    coverImg,
 		PdfUrl:      pdfUrl,
 		Labels:      labels,
 		Tags:        tags,
@@ -160,8 +164,8 @@ func storeRecipeAsJSON(recipe Recipe, targetPath string) error {
 	return err
 }
 
-func downloadPDFFromURL(pdfURL string, targetPath string) error {
-	resp, err := http.Get(pdfURL)
+func downloadFileFromUrl(fileUrl string, targetPath string) error {
+	resp, err := http.Get(fileUrl)
 	if err != nil {
 		return err
 	}
@@ -187,6 +191,15 @@ func downloadPDFFromURL(pdfURL string, targetPath string) error {
 
 func getBaseFromUrl(url string) string {
 	return path.Base(url)
+}
+
+func getFileExtensionFromURL(u string) (string, error) {
+	parsedURL, err := url.Parse(u)
+	if err != nil {
+		return "", err
+	}
+
+	return path.Ext(parsedURL.Path), nil
 }
 
 func pathExists(path string) (bool, error) {
@@ -236,7 +249,20 @@ func getAndSaveRecipe(url string, path string, recipeName string, downloadPdf bo
 	}
 
 	if downloadPdf && recipe.PdfUrl != "" {
-		err := downloadPDFFromURL(recipe.PdfUrl, targetRecipePdf)
+		err := downloadFileFromUrl(recipe.PdfUrl, targetRecipePdf)
+		if err != nil {
+			return err
+		}
+	}
+
+	if recipe.CoverImg != "" {
+		fileExtension, err := getFileExtensionFromURL(recipe.CoverImg)
+		if err != nil {
+			return err
+		}
+
+		coverTargetPath := fmt.Sprintf("%s/cover%s", targetDir, fileExtension)
+		err = downloadFileFromUrl(recipe.CoverImg, coverTargetPath)
 		if err != nil {
 			return err
 		}
